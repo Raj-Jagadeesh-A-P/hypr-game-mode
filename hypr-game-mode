@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+
+# CONFIGURATION
+SCRIPT_USER_HOME="${HOME}"
+if [ "${EUID:-$(id -u)}" -eq 0 ] && [ -n "${SUDO_USER}" ]; then
+    SCRIPT_USER_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+fi
+CONFIG_FILE="$SCRIPT_USER_HOME/.config/hypr-game-mode/config"
+GAME_DIR=""
+
+# --- 1. SETUP & INITIALIZATION ---
+init_check() {
+    if [ "${EUID:-$(id -u)}" -eq 0 ] && [ -z "${SUDO_USER}" ]; then
+        echo "❌ Do not run this script as root."
+        exit 1
+    fi
+    if [ ! -f "$CONFIG_FILE" ]; then
+        mkdir -p "$(dirname "$CONFIG_FILE")"
+        echo "⚠️  First Run Detected!"
+        echo "Enter the full path to your Games folder (where subfolders contain start.sh):"
+        read -r input_dir
+        # Expand ~ to home directory
+        input_dir="${input_dir/#\~/$HOME}"
+
+        if [ -d "$input_dir" ]; then
+            echo "GAME_DIR=\"$input_dir\"" > "$CONFIG_FILE"
+            echo "✅ Setup Complete. Config saved to $CONFIG_FILE"
+            sleep 1
+        else
+            echo "❌ Directory not found! Exiting."
+            exit 1
+        fi
+    fi
+    source "$CONFIG_FILE"
+}
+
+require_cmd() {
+    local cmd="$1"
+    local name="$2"
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "❌ Missing dependency: $name ($cmd)"
+        return 1
+    fi
+    return 0
+}
+
+# --- 2. CORE FUNCTIONS ---
+
+# Toggle Performance Mode (The "Hardware" part)
+toggle_mode() {
+    if ! command -v hyprctl &>/dev/null; then
+        echo "❌ hyprctl not found. Are you running Hyprland?"
+        return 1
+    fi
+    if [ -z "${HYPRLAND_INSTANCE_SIGNATURE}" ]; then
+        echo "⚠️  Hyprland is not running. Skipping compositor tweaks."
+        return 0
+    fi
+    MODE=$(hyprctl getoption animations:enabled | awk 'NR==1{print $2}')
+    if [ "$MODE" = 1 ]; then
+        command -v notify-send &>/dev/null && notify-send -u low "🚀 Game Mode" "Optimizing Hyprland & CPU..."
+        # Trigger Feral GameMode
+        command -v gamemoded &>/dev/null && gamemoded -r
+        # Kill Eye Candy
+        hyprctl --batch "\
+            keyword animations:enabled 0;\
+            keyword decoration:drop_shadow 0;\
+            keyword decoration:blur:enabled 0;\
+            keyword decoration:rounding 0"
+    else
+        command -v notify-send &>/dev/null && notify-send -u low "🛑 Desktop Mode" "Restoring Visuals..."
+        command -v gamemoded &>/dev/null && gamemoded -s
+        hyprctl reload
+    fi
+}
+
+# --- 3. MENUS ---
+
+menu_scrcpy() {
+    require_cmd fzf "fzf" || return 1
+    require_cmd scrcpy "scrcpy" || return 1
+    require_cmd adb "android-tools (adb)" || return 1
+    CHOICE=$(echo -e "🔌 Mirror (USB)\n📡 Connect Wireless (TCP/IP)\n🎥 Record Screen\n📉 Low Resolution (Smooth)\n🔙 Back" | fzf --prompt="📱 Android > " --layout=reverse)
+
+    case "$CHOICE" in
+        "🔌 Mirror (USB)")
+            scrcpy --max-size 1024 --window-title "Android USB" ;;
+        "📡 Connect Wireless (TCP/IP)")
+            echo "Enter Phone IP (found in Settings > About Status):"
+            read -r ip
+            adb tcpip 5555
+            adb connect "$ip:5555"
+            scrcpy --tcpip="$ip:5555" ;;
+        "🎥 Record Screen")
+            mkdir -p ~/Videos/Captures
+            scrcpy --record ~/Videos/Captures/android_$(date +%s).mp4 ;;
+        "📉 Low Resolution (Smooth)")
+            scrcpy --max-size 800 --bit-rate 2M --max-fps 60 ;;
+    esac
+}
+
+menu_games() {
+    require_cmd fzf "fzf" || return 1
+    # Find all start.sh files in the game dir
+    # formatting: show only the parent folder name
+    GAME_LIST=$(find "$GAME_DIR" -name "start.sh" -printf "%h\n" | awk -F/ '{print $NF}')
+
+    if [ -z "$GAME_LIST" ]; then
+        command -v notify-send &>/dev/null && notify-send "❌ No Games Found" "Check $GAME_DIR for folders with start.sh"
+        return
+    fi
+
+    SELECTED_GAME=$(echo "$GAME_LIST" | fzf --prompt="🎮 Launch > " --layout=reverse --preview="ls $GAME_DIR/{}")
+
+    if [ -n "$SELECTED_GAME" ]; then
+        # ASK FOR FPS OVERLAY
+        USE_HUD=$(echo -e "Yes\nNo" | fzf --prompt="Enable MangoHud (FPS)? " --layout=reverse)
+
+        # ACTIVATE GAME MODE
+        toggle_mode
+
+        # LAUNCH
+        FULL_PATH="$GAME_DIR/$SELECTED_GAME/start.sh"
+        if [ "$USE_HUD" = "Yes" ] && command -v mangohud &>/dev/null; then
+            mangohud "$FULL_PATH"
+        else
+            "$FULL_PATH"
+        fi
+
+        # DEACTIVATE GAME MODE (After game closes)
+        toggle_mode
+    fi
+}
+
+# --- 4. MAIN DASHBOARD ---
+init_check
+
+while true; do
+    MAIN_CHOICE=$(echo -e "📱 Android/Scrcpy Tools\n🎮 Game Launcher\n🚀 Toggle Performance Mode\n🚪 Exit" | fzf --prompt="Main Menu > " --header="Hypr-Game-Mode Dashboard" --layout=reverse --border)
+
+    case "$MAIN_CHOICE" in
+        "📱 Android/Scrcpy Tools") menu_scrcpy ;;
+        "🎮 Game Launcher") menu_games ;;
+        "🚀 Toggle Performance Mode") toggle_mode ;;
+        "🚪 Exit") exit 0 ;;
+    esac
+done
