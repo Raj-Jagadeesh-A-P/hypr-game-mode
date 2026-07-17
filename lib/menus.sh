@@ -5,16 +5,16 @@ menu_select() {
     shift
     local options=("$@")
 
-    if ! command_exists fzf; then
-        log_error "fzf is required for menu selection"
+    if ! command_exists gum; then
+        log_error "gum is required for menu selection"
         return 1
     fi
 
-    printf '%s\n' "${options[@]}" | fzf --prompt="$prompt " --layout=reverse --border 2>/dev/null || return 1
+    gum choose --header="$prompt" "${options[@]}" 2>/dev/null || return 1
 }
 
 menu_android() {
-    check_required_cmd fzf || return 1
+    check_required_cmd gum || return 1
 
     local choice
     choice=$(menu_select "📱 Android" \
@@ -44,7 +44,7 @@ menu_android() {
 }
 
 menu_games() {
-    check_required_cmd fzf || return 1
+    check_required_cmd gum || return 1
 
     local games
     games=$(find_games) || {
@@ -59,14 +59,14 @@ menu_games() {
     fi
 
     local selected_game
-    selected_game=$(printf '%s\n' "$games" | fzf --prompt="🎮 Launch > " --layout=reverse --border 2>/dev/null) || return 0
+    selected_game=$(echo "$games" | gum choose --header="🎮 Launch a game" 2>/dev/null) || return 0
 
     if [ -z "$selected_game" ]; then
         return 0
     fi
 
     local use_hud
-    use_hud=$(printf '%s\n' "Yes" "No" | fzf --prompt="Enable MangoHud (FPS)? " --layout=reverse --border 2>/dev/null) || use_hud="No"
+    use_hud=$(gum choose --header="Enable MangoHud (FPS)?" "Yes" "No" 2>/dev/null) || use_hud="No"
 
     if [ "$use_hud" = "Yes" ]; then
         export USE_MANGOHUD="true"
@@ -122,7 +122,7 @@ menu_settings() {
     fi
 
     local choice
-    choice=$(printf '%s\n' "Yes" "No" | fzf --prompt="Enable gamemoded (CPU optimization)? [current: $current_gamemode] " --layout=reverse --border 2>/dev/null) || return 0
+    choice=$(gum choose --header="Enable gamemoded (CPU optimization)? [current: $current_gamemode]" "Yes" "No" 2>/dev/null) || return 0
 
     if [ "$choice" = "Yes" ]; then
         new_gamemode="true"
