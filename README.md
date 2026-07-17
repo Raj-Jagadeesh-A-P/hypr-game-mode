@@ -6,6 +6,19 @@ hypr-game-mode is a TUI command center for Hyprland that unifies Android screen 
 
 On first run, it asks for your games directory and stores it in ~/.config/hypr-game-mode/config. After that, it presents a main menu with three options.
 
+## Project structure
+
+- `hypr-game-mode`: Entry point that loads modules and starts the app.
+- `lib/constants.sh`: Shared constants and config paths.
+- `lib/logging.sh`: Colored logging helpers.
+- `lib/utils.sh`: Utility and precondition checks.
+- `lib/config.sh`: First-run setup and config loading.
+- `lib/game_mode.sh`: Performance mode on/off logic.
+- `lib/launcher.sh`: Game discovery and launch flow.
+- `lib/android.sh`: scrcpy/adb Android helpers.
+- `lib/menus.sh`: fzf-powered menus.
+- `lib/main.sh`: Top-level app startup flow.
+
 ## Menu options
 
 ### 1) Android / Scrcpy Tools
